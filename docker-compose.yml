@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: comprefacil
+      POSTGRES_USER: comprefacil
+      POSTGRES_PASSWORD: comprefacil_dev
+    ports: ["5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data", "./database/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U comprefacil -d comprefacil"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+  payment-service:
+    build: ./payment-service
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://comprefacil:comprefacil_dev@postgres:5432/comprefacil
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      NOTIFICATION_QUEUE: payment.events
+      PAYMENT_CONFIRMATION_DELAY_MS: 3000
+    ports: ["3001:3001"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    restart: unless-stopped
+  notification-service:
+    build: ./notification-service
+    environment:
+      PORT: 3002
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      NOTIFICATION_QUEUE: payment.events
+    ports: ["3002:3002"]
+    depends_on:
+      rabbitmq: {condition: service_healthy}
+    restart: unless-stopped
+volumes:
+  postgres_data:
